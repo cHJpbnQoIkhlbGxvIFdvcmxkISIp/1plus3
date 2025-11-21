@@ -22,7 +22,7 @@
     // ========================================
     const CONFIG = {
         // Delay before the initial scan (ms)
-        initialDelay: 1100,
+        initialDelay: 500,
 
         // Global thumbnail settings
         thumbnails: {
@@ -169,4 +169,260 @@
             box-sizing: border-box;
             background-color: transparent;
             opacity: ${CONFIG.thumbnails.showOnHover ? '0' : '1'};
-            transition: ${shouldAnimate ? `opacity ${CONFIG.thumbnails.fadeInDuration} ease-in-out` : 'none
+            transition: ${shouldAnimate ? `opacity ${CONFIG.thumbnails.fadeInDuration} ease-in-out` : 'none'};
+        `;
+
+        const frameIndexes = CONFIG.thumbnails.frameIndexes;
+        const gap = sectionConfig.thumbnailGap;
+        const quality = CONFIG.thumbnails.quality;
+
+        frameIndexes.forEach((index, i) => {
+            const thumbnailUrl = `https://i.ytimg.com/vi/${videoId}/${quality}${index}.jpg`;
+
+            // Calculate thumbnail width
+            const isLast = i === frameIndexes.length - 1;
+            const marginRight = isLast ? '0' : gap;
+            const widthPercentage = 100 / frameIndexes.length;
+
+            const img = document.createElement('img');
+            img.src = thumbnailUrl;
+            img.alt = `Frame Preview ${quality.toUpperCase()}${index}`;
+
+            if (CONFIG.thumbnails.lazyLoad) {
+                img.loading = 'lazy';
+            }
+
+            const hoverTransform = CONFIG.thumbnails.hoverEffect ?
+                `scale(${CONFIG.thumbnails.hoverScale})` : 'none';
+
+            img.style.cssText = `
+                width: calc(${widthPercentage}% - ${isLast ? '0px' : gap});
+                height: auto;
+                object-fit: ${sectionConfig.objectFit};
+                border-radius: ${CONFIG.thumbnails.borderRadius};
+                display: block;
+                min-width: 0;
+                margin-right: ${marginRight};
+                opacity: ${sectionConfig.opacity};
+                transition: ${CONFIG.thumbnails.hoverEffect ? 'transform 0.2s ease-in-out' : 'none'};
+            `;
+
+            if (CONFIG.thumbnails.hoverEffect) {
+                img.addEventListener('mouseenter', () => {
+                    img.style.transform = hoverTransform;
+                });
+                img.addEventListener('mouseleave', () => {
+                    img.style.transform = 'scale(1)';
+                });
+            }
+
+            container.appendChild(img);
+        });
+
+        if (CONFIG.advanced.debugMode) {
+            console.log(`[1plus3] Created container for video: ${videoId}`);
+        }
+
+        return container;
+    }
+
+    // ========================================
+    // SECTION PROCESSING LOGIC
+    // ========================================
+
+    function processHomepage(videoItem, sectionConfig) {
+        const insertionReference = videoItem.querySelector('h3.yt-lockup-metadata-view-model__heading-reset, #video-title');
+        if (!insertionReference) return false;
+
+        const videoId = getVideoIdFromElement(videoItem);
+        const container = createThumbnailsContainer(videoId, sectionConfig);
+
+        // Handle hover visibility
+        if (CONFIG.thumbnails.showOnHover) {
+            const thumbnail = videoItem.querySelector('a#thumbnail');
+            if (thumbnail) {
+                thumbnail.addEventListener('mouseenter', () => {
+                    container.style.opacity = '1';
+                });
+                thumbnail.addEventListener('mouseleave', () => {
+                    container.style.opacity = '0';
+                });
+            }
+        }
+
+        if (insertionReference.parentElement && !insertionReference.parentElement.querySelector('.hq-thumbnails-container')) {
+            insertionReference.insertAdjacentElement('beforebegin', container);
+            return true;
+        }
+        return false;
+    }
+
+    function processChannel(videoItem, sectionConfig) {
+        // Channel pages use the same logic as homepage
+        return processHomepage(videoItem, sectionConfig);
+    }
+
+    function processSearch(videoItem, sectionConfig) {
+        const insertionReference = videoItem.querySelector('#title-wrapper');
+        if (!insertionReference) return false;
+
+        const videoId = getVideoIdFromElement(videoItem);
+        const container = createThumbnailsContainer(videoId, sectionConfig);
+
+        // Handle hover visibility
+        if (CONFIG.thumbnails.showOnHover) {
+            const thumbnail = videoItem.querySelector('a#thumbnail');
+            if (thumbnail) {
+                thumbnail.addEventListener('mouseenter', () => {
+                    container.style.opacity = '1';
+                });
+                thumbnail.addEventListener('mouseleave', () => {
+                    container.style.opacity = '0';
+                });
+            }
+        }
+
+        if (insertionReference.parentElement && !insertionReference.parentElement.querySelector('.hq-thumbnails-container')) {
+            insertionReference.insertAdjacentElement('beforebegin', container);
+            return true;
+        }
+        return false;
+    }
+
+    function processSidebar(videoItem, sectionConfig) {
+        let metadataWrapper = videoItem.querySelector('#metadata, .yt-lockup-view-model__metadata');
+        if (!metadataWrapper) return false;
+
+        const insertionReference = metadataWrapper.querySelector('h3, #video-title, .yt-lockup-metadata-view-model__heading-reset');
+        if (!insertionReference) return false;
+
+        const videoId = getVideoIdFromElement(videoItem);
+        const container = createThumbnailsContainer(videoId, sectionConfig);
+
+        // Handle hover visibility
+        if (CONFIG.thumbnails.showOnHover) {
+            const thumbnail = videoItem.querySelector('a#thumbnail, a.yt-lockup-view-model__content-image');
+            if (thumbnail) {
+                thumbnail.addEventListener('mouseenter', () => {
+                    container.style.opacity = '1';
+                });
+                thumbnail.addEventListener('mouseleave', () => {
+                    container.style.opacity = '0';
+                });
+            }
+        }
+
+        if (insertionReference.parentElement && !insertionReference.parentElement.querySelector('.hq-thumbnails-container')) {
+            insertionReference.insertAdjacentElement('beforebegin', container);
+            return true;
+        }
+        return false;
+    }
+
+    // ========================================
+    // MAIN PROCESSING LOGIC
+    // ========================================
+
+    function processVideoItem(videoItem) {
+        if (videoItem.hasAttribute(ATTR_PROCESSED)) {
+            return;
+        }
+
+        const videoId = getVideoIdFromElement(videoItem);
+        if (!videoId) return;
+
+        const section = detectSection(videoItem);
+        if (!section) return;
+
+        const sectionConfig = CONFIG.sections[section];
+        if (!sectionConfig || !sectionConfig.enabled) return;
+
+        let success = false;
+
+        switch(section) {
+            case 'homepage':
+                success = processHomepage(videoItem, sectionConfig);
+                break;
+            case 'channel':
+                success = processChannel(videoItem, sectionConfig);
+                break;
+            case 'search':
+                success = processSearch(videoItem, sectionConfig);
+                break;
+            case 'sidebar':
+                success = processSidebar(videoItem, sectionConfig);
+                break;
+        }
+
+        if (success) {
+            videoItem.setAttribute(ATTR_PROCESSED, 'true');
+        }
+    }
+
+    function scanAndProcessVideos() {
+        // Collect all selectors from enabled sections
+        const activeSelectors = Object.entries(CONFIG.sections)
+            .filter(([_, config]) => config.enabled)
+            .map(([section, _]) => SELECTORS[section])
+            .join(', ');
+
+        if (!activeSelectors) return;
+
+        const videoItems = document.querySelectorAll(
+            `${activeSelectors}:not([${ATTR_PROCESSED}])`
+        );
+
+        if (CONFIG.advanced.debugMode) {
+            console.log(`[1plus3] Found ${videoItems.length} new videos to process`);
+        }
+
+        videoItems.forEach(processVideoItem);
+    }
+
+    function setupMutationObserver() {
+        const targetNode = document.getElementById('page-manager') || document.body;
+
+        let timeoutId = null;
+        const observer = new MutationObserver(() => {
+            if (CONFIG.advanced.observerThrottle > 0) {
+                if (timeoutId) clearTimeout(timeoutId);
+                timeoutId = setTimeout(() => {
+                    scanAndProcessVideos();
+                }, CONFIG.advanced.observerThrottle);
+            } else {
+                scanAndProcessVideos();
+            }
+        });
+
+        observer.observe(targetNode, { childList: true, subtree: true });
+
+        if (CONFIG.advanced.debugMode) {
+            console.log('[1plus3] Mutation observer started');
+        }
+    }
+
+    // ========================================
+    // INITIALIZATION
+    // ========================================
+
+    if (CONFIG.advanced.debugMode) {
+        console.log('[1plus3] Script loaded, waiting for initial delay...');
+    }
+
+    setTimeout(() => {
+        if (CONFIG.advanced.processExistingVideos) {
+            scanAndProcessVideos();
+        }
+        setupMutationObserver();
+
+        // Fallback scan to ensure coverage
+        if (CONFIG.advanced.fallbackDelay > 0) {
+            setTimeout(scanAndProcessVideos, CONFIG.advanced.fallbackDelay);
+        }
+
+        if (CONFIG.advanced.debugMode) {
+            console.log('[1plus3] Initialization complete');
+        }
+    }, CONFIG.initialDelay);
+
+})();
