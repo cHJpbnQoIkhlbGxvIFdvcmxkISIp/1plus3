@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         1plus3: Thumbnail + 3 Extra Frames (for YouTube)
 // @namespace    https://github.com/cHJpbnQoIkhlbGxvIFdvcmxkISIp/1plus3
-// @version      0.0.1
+// @version      0.0.2
 // @description  This extension helps you avoid misleading clickbait YouTube thumbnails. 1+3 keeps the main thumbnail and adds three small static frames from the video's start, middle, and end. See what the video really shows and decide if you like it.
 // @author       cHJpbnQoIkhlbGxvIFdvcmxkISIp
 // @match        https://www.youtube.com/*
@@ -21,32 +21,27 @@
     // CONFIGURATION
     // ========================================
     const CONFIG = {
-        // Delay before the initial scan (ms)
         initialDelay: 500,
-
-        // Global thumbnail settings
         thumbnails: {
-            frameIndexes: [1, 2, 3],     // Which frames to show: [1,2,3], [0,1,2], or custom
-            borderRadius: '0px',         // Corner radius for thumbnails
-            quality: 'hq',               // Quality: 'hq' (480x360), 'mq' (320x180), 'sd' (640x480), 'maxres' (1920x1080)
-            lazyLoad: true,              // Enable lazy loading (loading="lazy")
-            hoverEffect: true,           // Enable zoom effect on hover
-            hoverScale: 2.0,             // Zoom scale (1.0 = none, 1.1 = 110%)
-            showOnHover: false,          // Show extra thumbnails only when hovering over the main thumbnail
-            fadeInDuration: '1.0s'       // Fade-in animation duration
+            frameIndexes: [1, 2, 3],
+            borderRadius: '0px',
+            quality: 'hq',
+            lazyLoad: true,
+            hoverEffect: true,
+            hoverScale: 2.0,
+            showOnHover: false,
+            fadeInDuration: '1.0s'
         },
-
-        // Enable/Disable for specific sections
         sections: {
             homepage: {
                 enabled: true,
-                width: '100%',           // Container width
-                justify: 'space-between', // flex options: space-between, flex-start, center, space-around
-                thumbnailGap: '5px',     // Gap between thumbnails
+                width: '100%',
+                justify: 'space-between',
+                thumbnailGap: '5px',
                 marginTop: '0',
                 marginBottom: '2px',
-                objectFit: 'cover',      // options: cover, contain, fill
-                opacity: 1.0             // Transparency (0.0 - 1.0)
+                objectFit: 'cover',
+                opacity: 1.0
             },
             channel: {
                 enabled: true,
@@ -60,9 +55,9 @@
             },
             search: {
                 enabled: true,
-                width: '50%',            // Narrower width for search results
+                width: '50%',
                 justify: 'flex-start',
-                thumbnailGap: '1px',     // Tighter gap
+                thumbnailGap: '1px',
                 marginTop: '0',
                 marginBottom: '2px',
                 objectFit: 'cover',
@@ -79,21 +74,16 @@
                 opacity: 1.0
             }
         },
-
-        // Advanced options
         advanced: {
-            debugMode: false,            // Show logs in the console
-            processExistingVideos: true, // Process videos already present on the page
-            observerThrottle: 0,         // Mutation observer throttle (ms), 0 = none
-            fallbackDelay: 250,          // Additional scan after this delay (ms)
-            respectReducedMotion: true   // Respect system 'prefers-reduced-motion' settings
+            debugMode: false,
+            processExistingVideos: true,
+            observerThrottle: 100, // Added small throttle for performance
+            fallbackDelay: 250,
+            respectReducedMotion: true
         }
     };
 
-    // ========================================
-    // CONSTANTS
-    // ========================================
-    const ATTR_PROCESSED = 'data-hq-processed';
+    const ATTR_PROCESSED = 'data-hq-processed-id';
 
     const SELECTORS = {
         homepage: 'ytd-rich-item-renderer, ytd-grid-video-renderer',
@@ -108,7 +98,6 @@
 
     function getVideoIdFromElement(videoItem) {
         const thumbnailLink = videoItem.querySelector('a#thumbnail, a.yt-lockup-view-model__content-image');
-
         if (thumbnailLink && thumbnailLink.href) {
             try {
                 const url = new URL(thumbnailLink.href, window.location.origin);
@@ -122,30 +111,14 @@
 
     function detectSection(videoItem) {
         const tagName = videoItem.tagName;
-
-        // Search results
-        if (tagName === 'YTD-VIDEO-RENDERER') {
-            return 'search';
-        }
-
-        // Sidebar / Watch next
-        if (tagName === 'YTD-COMPACT-VIDEO-RENDERER' || tagName === 'YT-LOCKUP-VIEW-MODEL') {
-            return 'sidebar';
-        }
-
-        // Channel page vs Homepage (both use similar tags)
+        if (tagName === 'YTD-VIDEO-RENDERER') return 'search';
+        if (tagName === 'YTD-COMPACT-VIDEO-RENDERER' || tagName === 'YT-LOCKUP-VIEW-MODEL') return 'sidebar';
         if (tagName === 'YTD-GRID-VIDEO-RENDERER') {
-            // Check if we are on a channel page
             if (window.location.pathname.includes('/@') || window.location.pathname.includes('/channel/')) {
                 return 'channel';
             }
         }
-
-        // Homepage
-        if (tagName === 'YTD-RICH-ITEM-RENDERER' || tagName === 'YTD-GRID-VIDEO-RENDERER') {
-            return 'homepage';
-        }
-
+        if (tagName === 'YTD-RICH-ITEM-RENDERER' || tagName === 'YTD-GRID-VIDEO-RENDERER') return 'homepage';
         return null;
     }
 
@@ -153,7 +126,6 @@
         const container = document.createElement('div');
         container.className = 'hq-thumbnails-container';
 
-        // Handle fade-in animation logic
         const shouldAnimate = CONFIG.thumbnails.fadeInDuration !== '0s' &&
                             (!CONFIG.advanced.respectReducedMotion ||
                              !window.matchMedia('(prefers-reduced-motion: reduce)').matches);
@@ -178,8 +150,6 @@
 
         frameIndexes.forEach((index, i) => {
             const thumbnailUrl = `https://i.ytimg.com/vi/${videoId}/${quality}${index}.jpg`;
-
-            // Calculate thumbnail width
             const isLast = i === frameIndexes.length - 1;
             const marginRight = isLast ? '0' : gap;
             const widthPercentage = 100 / frameIndexes.length;
@@ -187,13 +157,9 @@
             const img = document.createElement('img');
             img.src = thumbnailUrl;
             img.alt = `Frame Preview ${quality.toUpperCase()}${index}`;
+            if (CONFIG.thumbnails.lazyLoad) img.loading = 'lazy';
 
-            if (CONFIG.thumbnails.lazyLoad) {
-                img.loading = 'lazy';
-            }
-
-            const hoverTransform = CONFIG.thumbnails.hoverEffect ?
-                `scale(${CONFIG.thumbnails.hoverScale})` : 'none';
+            const hoverTransform = CONFIG.thumbnails.hoverEffect ? `scale(${CONFIG.thumbnails.hoverScale})` : 'none';
 
             img.style.cssText = `
                 width: calc(${widthPercentage}% - ${isLast ? '0px' : gap});
@@ -208,20 +174,11 @@
             `;
 
             if (CONFIG.thumbnails.hoverEffect) {
-                img.addEventListener('mouseenter', () => {
-                    img.style.transform = hoverTransform;
-                });
-                img.addEventListener('mouseleave', () => {
-                    img.style.transform = 'scale(1)';
-                });
+                img.addEventListener('mouseenter', () => { img.style.transform = hoverTransform; });
+                img.addEventListener('mouseleave', () => { img.style.transform = 'scale(1)'; });
             }
-
             container.appendChild(img);
         });
-
-        if (CONFIG.advanced.debugMode) {
-            console.log(`[1plus3] Created container for video: ${videoId}`);
-        }
 
         return container;
     }
@@ -230,93 +187,23 @@
     // SECTION PROCESSING LOGIC
     // ========================================
 
-    function processHomepage(videoItem, sectionConfig) {
-        const insertionReference = videoItem.querySelector('h3.yt-lockup-metadata-view-model__heading-reset, #video-title');
-        if (!insertionReference) return false;
-
-        const videoId = getVideoIdFromElement(videoItem);
-        const container = createThumbnailsContainer(videoId, sectionConfig);
-
-        // Handle hover visibility
-        if (CONFIG.thumbnails.showOnHover) {
-            const thumbnail = videoItem.querySelector('a#thumbnail');
-            if (thumbnail) {
-                thumbnail.addEventListener('mouseenter', () => {
-                    container.style.opacity = '1';
-                });
-                thumbnail.addEventListener('mouseleave', () => {
-                    container.style.opacity = '0';
-                });
-            }
-        }
-
-        if (insertionReference.parentElement && !insertionReference.parentElement.querySelector('.hq-thumbnails-container')) {
+    function injectToElement(videoItem, container, selector) {
+        const insertionReference = videoItem.querySelector(selector);
+        if (insertionReference && insertionReference.parentElement) {
             insertionReference.insertAdjacentElement('beforebegin', container);
             return true;
         }
         return false;
     }
 
-    function processChannel(videoItem, sectionConfig) {
-        // Channel pages use the same logic as homepage
-        return processHomepage(videoItem, sectionConfig);
-    }
-
-    function processSearch(videoItem, sectionConfig) {
-        const insertionReference = videoItem.querySelector('#title-wrapper');
-        if (!insertionReference) return false;
-
-        const videoId = getVideoIdFromElement(videoItem);
-        const container = createThumbnailsContainer(videoId, sectionConfig);
-
-        // Handle hover visibility
+    function handleHoverLogic(videoItem, container, thumbSelector) {
         if (CONFIG.thumbnails.showOnHover) {
-            const thumbnail = videoItem.querySelector('a#thumbnail');
+            const thumbnail = videoItem.querySelector(thumbSelector);
             if (thumbnail) {
-                thumbnail.addEventListener('mouseenter', () => {
-                    container.style.opacity = '1';
-                });
-                thumbnail.addEventListener('mouseleave', () => {
-                    container.style.opacity = '0';
-                });
+                thumbnail.addEventListener('mouseenter', () => { container.style.opacity = '1'; });
+                thumbnail.addEventListener('mouseleave', () => { container.style.opacity = '0'; });
             }
         }
-
-        if (insertionReference.parentElement && !insertionReference.parentElement.querySelector('.hq-thumbnails-container')) {
-            insertionReference.insertAdjacentElement('beforebegin', container);
-            return true;
-        }
-        return false;
-    }
-
-    function processSidebar(videoItem, sectionConfig) {
-        let metadataWrapper = videoItem.querySelector('#metadata, .yt-lockup-view-model__metadata');
-        if (!metadataWrapper) return false;
-
-        const insertionReference = metadataWrapper.querySelector('h3, #video-title, .yt-lockup-metadata-view-model__heading-reset');
-        if (!insertionReference) return false;
-
-        const videoId = getVideoIdFromElement(videoItem);
-        const container = createThumbnailsContainer(videoId, sectionConfig);
-
-        // Handle hover visibility
-        if (CONFIG.thumbnails.showOnHover) {
-            const thumbnail = videoItem.querySelector('a#thumbnail, a.yt-lockup-view-model__content-image');
-            if (thumbnail) {
-                thumbnail.addEventListener('mouseenter', () => {
-                    container.style.opacity = '1';
-                });
-                thumbnail.addEventListener('mouseleave', () => {
-                    container.style.opacity = '0';
-                });
-            }
-        }
-
-        if (insertionReference.parentElement && !insertionReference.parentElement.querySelector('.hq-thumbnails-container')) {
-            insertionReference.insertAdjacentElement('beforebegin', container);
-            return true;
-        }
-        return false;
     }
 
     // ========================================
@@ -324,43 +211,42 @@
     // ========================================
 
     function processVideoItem(videoItem) {
-        if (videoItem.hasAttribute(ATTR_PROCESSED)) {
-            return;
-        }
-
         const videoId = getVideoIdFromElement(videoItem);
         if (!videoId) return;
 
+        // Check if this element already has thumbnails for THIS video ID
+        const lastProcessedId = videoItem.getAttribute(ATTR_PROCESSED);
+        if (lastProcessedId === videoId) return;
+
         const section = detectSection(videoItem);
-        if (!section) return;
+        if (!section || !CONFIG.sections[section].enabled) return;
 
         const sectionConfig = CONFIG.sections[section];
-        if (!sectionConfig || !sectionConfig.enabled) return;
 
+        // REMOVE existing container if ID changed (SPA navigation)
+        const oldContainer = videoItem.querySelector('.hq-thumbnails-container');
+        if (oldContainer) oldContainer.remove();
+
+        const container = createThumbnailsContainer(videoId, sectionConfig);
         let success = false;
 
-        switch(section) {
-            case 'homepage':
-                success = processHomepage(videoItem, sectionConfig);
-                break;
-            case 'channel':
-                success = processChannel(videoItem, sectionConfig);
-                break;
-            case 'search':
-                success = processSearch(videoItem, sectionConfig);
-                break;
-            case 'sidebar':
-                success = processSidebar(videoItem, sectionConfig);
-                break;
+        if (section === 'homepage' || section === 'channel') {
+            success = injectToElement(videoItem, container, 'h3.yt-lockup-metadata-view-model__heading-reset, #video-title');
+            handleHoverLogic(videoItem, container, 'a#thumbnail');
+        } else if (section === 'search') {
+            success = injectToElement(videoItem, container, '#title-wrapper');
+            handleHoverLogic(videoItem, container, 'a#thumbnail');
+        } else if (section === 'sidebar') {
+            success = injectToElement(videoItem, container, 'h3, #video-title, .yt-lockup-metadata-view-model__heading-reset');
+            handleHoverLogic(videoItem, container, 'a#thumbnail, a.yt-lockup-view-model__content-image');
         }
 
         if (success) {
-            videoItem.setAttribute(ATTR_PROCESSED, 'true');
+            videoItem.setAttribute(ATTR_PROCESSED, videoId);
         }
     }
 
     function scanAndProcessVideos() {
-        // Collect all selectors from enabled sections
         const activeSelectors = Object.entries(CONFIG.sections)
             .filter(([_, config]) => config.enabled)
             .map(([section, _]) => SELECTORS[section])
@@ -368,60 +254,29 @@
 
         if (!activeSelectors) return;
 
-        const videoItems = document.querySelectorAll(
-            `${activeSelectors}:not([${ATTR_PROCESSED}])`
-        );
-
-        if (CONFIG.advanced.debugMode) {
-            console.log(`[1plus3] Found ${videoItems.length} new videos to process`);
-        }
-
+        const videoItems = document.querySelectorAll(activeSelectors);
         videoItems.forEach(processVideoItem);
     }
 
     function setupMutationObserver() {
         const targetNode = document.getElementById('page-manager') || document.body;
-
         let timeoutId = null;
         const observer = new MutationObserver(() => {
-            if (CONFIG.advanced.observerThrottle > 0) {
-                if (timeoutId) clearTimeout(timeoutId);
-                timeoutId = setTimeout(() => {
-                    scanAndProcessVideos();
-                }, CONFIG.advanced.observerThrottle);
-            } else {
-                scanAndProcessVideos();
-            }
+            if (timeoutId) clearTimeout(timeoutId);
+            timeoutId = setTimeout(scanAndProcessVideos, CONFIG.advanced.observerThrottle);
         });
-
         observer.observe(targetNode, { childList: true, subtree: true });
-
-        if (CONFIG.advanced.debugMode) {
-            console.log('[1plus3] Mutation observer started');
-        }
     }
 
     // ========================================
     // INITIALIZATION
     // ========================================
 
-    if (CONFIG.advanced.debugMode) {
-        console.log('[1plus3] Script loaded, waiting for initial delay...');
-    }
-
     setTimeout(() => {
-        if (CONFIG.advanced.processExistingVideos) {
-            scanAndProcessVideos();
-        }
+        if (CONFIG.advanced.processExistingVideos) scanAndProcessVideos();
         setupMutationObserver();
-
-        // Fallback scan to ensure coverage
         if (CONFIG.advanced.fallbackDelay > 0) {
             setTimeout(scanAndProcessVideos, CONFIG.advanced.fallbackDelay);
-        }
-
-        if (CONFIG.advanced.debugMode) {
-            console.log('[1plus3] Initialization complete');
         }
     }, CONFIG.initialDelay);
 
