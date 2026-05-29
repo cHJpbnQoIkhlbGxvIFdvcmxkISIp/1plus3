@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         1plus3: Thumbnail + 3 Extra Frames (for YouTube)
 // @namespace    https://github.com/cHJpbnQoIkhlbGxvIFdvcmxkISIp/1plus3
-// @version      0.0.2
+// @version      0.0.3
 // @description  This extension helps you avoid misleading clickbait YouTube thumbnails. 1+3 keeps the main thumbnail and adds three small static frames from the video's start, middle, and end. See what the video really shows and decide if you like it.
 // @author       cHJpbnQoIkhlbGxvIFdvcmxkISIp
 // @match        https://www.youtube.com/*
@@ -77,7 +77,7 @@
         advanced: {
             debugMode: false,
             processExistingVideos: true,
-            observerThrottle: 100, // Added small throttle for performance
+            observerThrottle: 100,
             fallbackDelay: 250,
             respectReducedMotion: true
         }
@@ -97,13 +97,26 @@
     // ========================================
 
     function getVideoIdFromElement(videoItem) {
-        const thumbnailLink = videoItem.querySelector('a#thumbnail, a.yt-lockup-view-model__content-image');
-        if (thumbnailLink && thumbnailLink.href) {
+        // Try all known link selectors across old and new YouTube layouts.
+        // New layout (2024+) uses .ytLockupViewModelContentImage and .ytLockupMetadataViewModelTitle
+        // instead of a#thumbnail.
+        const selectors = [
+            'a#thumbnail',
+            'a.yt-lockup-view-model__content-image',
+            'a.ytLockupViewModelContentImage',
+            'a.ytLockupMetadataViewModelTitle',
+        ];
+        for (const sel of selectors) {
+            const link = videoItem.querySelector(sel);
+            if (!link?.href) continue;
             try {
-                const url = new URL(thumbnailLink.href, window.location.origin);
-                return url.searchParams.get('v') || url.searchParams.get('list');
+                const url = new URL(link.href, window.location.origin);
+                // Only accept links that belong to youtube.com to skip ad URLs
+                if (url.hostname !== 'www.youtube.com') continue;
+                const id = url.searchParams.get('v');
+                if (id) return id;
             } catch (e) {
-                return null;
+                // malformed URL — try next selector
             }
         }
         return null;
@@ -214,7 +227,7 @@
         const videoId = getVideoIdFromElement(videoItem);
         if (!videoId) return;
 
-        // Check if this element already has thumbnails for THIS video ID
+        // Skip if this element already has thumbnails for this exact video ID
         const lastProcessedId = videoItem.getAttribute(ATTR_PROCESSED);
         if (lastProcessedId === videoId) return;
 
@@ -223,7 +236,7 @@
 
         const sectionConfig = CONFIG.sections[section];
 
-        // REMOVE existing container if ID changed (SPA navigation)
+        // Remove existing container if video ID changed (SPA navigation)
         const oldContainer = videoItem.querySelector('.hq-thumbnails-container');
         if (oldContainer) oldContainer.remove();
 
@@ -231,13 +244,13 @@
         let success = false;
 
         if (section === 'homepage' || section === 'channel') {
-            success = injectToElement(videoItem, container, 'h3.yt-lockup-metadata-view-model__heading-reset, #video-title');
+            success = injectToElement(videoItem, container, 'h3.ytLockupMetadataViewModelHeadingReset, h3.yt-lockup-metadata-view-model__heading-reset, #video-title');
             handleHoverLogic(videoItem, container, 'a#thumbnail');
         } else if (section === 'search') {
             success = injectToElement(videoItem, container, '#title-wrapper');
             handleHoverLogic(videoItem, container, 'a#thumbnail');
         } else if (section === 'sidebar') {
-            success = injectToElement(videoItem, container, 'h3, #video-title, .yt-lockup-metadata-view-model__heading-reset');
+            success = injectToElement(videoItem, container, 'h3.ytLockupMetadataViewModelHeadingReset, h3.yt-lockup-metadata-view-model__heading-reset, h3, #video-title');
             handleHoverLogic(videoItem, container, 'a#thumbnail, a.yt-lockup-view-model__content-image');
         }
 
@@ -258,7 +271,19 @@
         videoItems.forEach(processVideoItem);
     }
 
-    function setupMutationObserver() {
+    // Remove stale processed attributes left over from a previous session or
+    // restored from bfcache, so all visible items are re-evaluated on init.
+    function clearStaleAttributes() {
+        document.querySelectorAll(`[${ATTR_PROCESSED}]`).forEach(el => {
+            el.removeAttribute(ATTR_PROCESSED);
+        });
+    }
+
+    // ========================================
+    // MUTATION OBSERVER SETUP
+    // ========================================
+
+    function attachMutationObserver() {
         const targetNode = document.getElementById('page-manager') || document.body;
         let timeoutId = null;
         const observer = new MutationObserver(() => {
@@ -268,13 +293,47 @@
         observer.observe(targetNode, { childList: true, subtree: true });
     }
 
+    function setupMutationObserver() {
+        // If page-manager already exists (common in old profiles with cached SPA state),
+        // attach immediately; otherwise wait for it to appear in the DOM.
+        if (document.getElementById('page-manager')) {
+            attachMutationObserver();
+        } else {
+            const waitObserver = new MutationObserver((_, obs) => {
+                if (document.getElementById('page-manager')) {
+                    obs.disconnect();
+                    attachMutationObserver();
+                }
+            });
+            waitObserver.observe(document.body, { childList: true, subtree: true });
+        }
+    }
+
     // ========================================
     // INITIALIZATION
     // ========================================
 
+    // Handle pages restored from bfcache (common in Waterfox/Firefox).
+    // The script does not re-execute on bfcache restore, so we must re-scan manually.
+    window.addEventListener('pageshow', (event) => {
+        if (event.persisted) {
+            clearStaleAttributes();
+            setTimeout(scanAndProcessVideos, CONFIG.initialDelay);
+        }
+    });
+
+    // YouTube fires this custom event after every SPA navigation.
+    // Listening to it ensures we catch navigations that produce few DOM mutations.
+    window.addEventListener('yt-navigate-finish', () => {
+        setTimeout(scanAndProcessVideos, CONFIG.advanced.fallbackDelay);
+    });
+
     setTimeout(() => {
+        clearStaleAttributes();
+
         if (CONFIG.advanced.processExistingVideos) scanAndProcessVideos();
         setupMutationObserver();
+
         if (CONFIG.advanced.fallbackDelay > 0) {
             setTimeout(scanAndProcessVideos, CONFIG.advanced.fallbackDelay);
         }
